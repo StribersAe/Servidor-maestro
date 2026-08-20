@@ -4,8 +4,6 @@ import string
 
 app = Flask(__name__)
 
-# Memoria temporal para las salas activas
-# Formato: { "CODIGO": { "host": "IP_o_ID", "jugadores": ["Jugador 1", "Jugador 2"], "en_partida": False } }
 salas = {}
 
 def generar_codigo_sala():
@@ -13,8 +11,8 @@ def generar_codigo_sala():
 
 @app.route('/crear_sala', methods=['POST'])
 def crear_sala():
-    data = request.json
-    nombre_jugador = data.get("jugador", "Anónimo")
+    data = request.json or {}
+    nombre_jugador = data.get("jugador", "Jugador 1")
     codigo = generar_codigo_sala()
     
     while codigo in salas:
@@ -25,28 +23,40 @@ def crear_sala():
         "jugadores": [nombre_jugador],
         "en_partida": False
     }
-    return jsonify({"exito": True, "codigo": codigo})
+    return jsonify({"exito": True, "codigo": codigo, "total": 1})
 
 @app.route('/unirse_sala', methods=['POST'])
 def unirse_sala():
-    data = request.json
+    data = request.json or {}
     codigo = data.get("codigo", "").upper()
-    nombre_jugador = data.get("jugador", "Anónimo")
+    nombre_jugador = data.get("jugador", f"Jugador_{random.randint(2,5)}")
     
     if codigo in salas:
         if not salas[codigo]["en_partida"]:
             if nombre_jugador not in salas[codigo]["jugadores"]:
                 salas[codigo]["jugadores"].append(nombre_jugador)
-            return jsonify({"exito": True, "mensaje": "Unido con éxito", "sala": salas[codigo]})
+            return jsonify({
+                "exito": True, 
+                "mensaje": "Unido con éxito", 
+                "total": len(salas[codigo]["jugadores"]),
+                "sala": salas[codigo]
+            })
         else:
             return jsonify({"exito": False, "mensaje": "La partida ya empezó"})
     return jsonify({"exito": False, "mensaje": "Sala no encontrada"})
 
-@app.route('/estado_sala/<codigo>', methods=['GET'])
-def estado_sala(codigo):
-    codigo = codigo.upper()
+# Soportamos tanto /estado_sala?codigo=XYZ como /estado_sala/XYZ
+@app.route('/estado_sala', methods=['GET'])
+@app.route('/estado_sala/<codigo_url>', methods=['GET'])
+def estado_sala(codigo_url=None):
+    codigo = codigo_url or request.args.get("codigo", "").upper()
     if codigo in salas:
-        return jsonify({"exito": True, "sala": salas[codigo]})
+        total_jugadores = len(salas[codigo]["jugadores"])
+        return jsonify({
+            "exito": True, 
+            "total": total_jugadores,
+            "sala": salas[codigo]
+        })
     return jsonify({"exito": False, "mensaje": "Sala no existe"})
 
 if __name__ == '__main__':
