@@ -70,6 +70,8 @@ def unirse_sala():
         })
     
     if codigo in estado_partida:
+        if "listos" not in estado_partida[codigo]:
+            estado_partida[codigo]["listos"] = {}
         estado_partida[codigo]["listos"][jugador_id] = False
         
     return jsonify({
@@ -115,6 +117,8 @@ def enviar_respuesta():
     accion = data.get("accion") # "LISTO" o "ESPERAR"
     
     if codigo in estado_partida and jugador_id:
+        if "listos" not in estado_partida[codigo]:
+            estado_partida[codigo]["listos"] = {}
         estado_partida[codigo]["listos"][jugador_id] = (accion == "LISTO")
         return jsonify({"exito": True})
     return jsonify({"exito": False, "error": "Error al actualizar respuesta"})
@@ -124,7 +128,7 @@ def iniciar_partida():
     data = request.json or {}
     codigo = data.get("codigo", "").upper()
     if codigo in estado_partida:
-        listos_dict = estado_partida[codigo]["listos"]
+        listos_dict = estado_partida[codigo].get("listos", {})
         if listos_dict and all(listos_dict.values()):
             estado_partida[codigo]["iniciada"] = True
             estado_partida[codigo]["estado"] = "INICIADA"
