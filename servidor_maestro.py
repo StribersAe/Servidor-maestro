@@ -21,14 +21,14 @@ def home():
 def crear_sala():
     data = request.json or {}
     nombre_creador = data.get("jugador") or data.get("nombre", "Anónimo")
-    id_jugador = data.get("id_jugador", nombre_creador)
+    id_jugador = str(data.get("id_jugador", nombre_creador))
     
     codigo = str(data.get("codigo", random.randint(1000, 9999))).upper()
     
     if codigo not in salas:
         salas[codigo] = []
     
-    if not any(str(j.get("id")) == str(id_jugador) for j in salas[codigo]):
+    if not any(str(j.get("id")) == id_jugador for j in salas[codigo]):
         salas[codigo].append({
             "id": id_jugador,
             "nombre": nombre_creador
@@ -40,7 +40,7 @@ def crear_sala():
     estado_partida[codigo] = {
         "iniciada": False, 
         "estado": "LOBBY",
-        "listos": {str(id_jugador): False}
+        "listos": {id_jugador: False}
     }
     
     return jsonify({
@@ -55,13 +55,13 @@ def unirse_sala():
     data = request.json or {}
     codigo = data.get("codigo", "").upper()
     nombre_jugador = data.get("jugador") or data.get("nombre", "Jugador")
-    jugador_id = data.get("id_jugador", nombre_jugador)
+    jugador_id = str(data.get("id_jugador", nombre_jugador))
     
     if not codigo or codigo not in salas:
         return jsonify({"exito": False, "error": "La sala no existe"})
     
     jugadores_actuales = salas[codigo]
-    existe = any(str(j.get("id")) == str(jugador_id) for j in jugadores_actuales)
+    existe = any(str(j.get("id")) == jugador_id for j in jugadores_actuales)
     
     if not existe:
         jugadores_actuales.append({
@@ -70,7 +70,7 @@ def unirse_sala():
         })
     
     if codigo in estado_partida:
-        estado_partida[codigo]["listos"][str(jugador_id)] = False
+        estado_partida[codigo]["listos"][jugador_id] = False
         
     return jsonify({
         "exito": True, 
@@ -111,11 +111,11 @@ def solicitar_inicio():
 def enviar_respuesta():
     data = request.json or {}
     codigo = data.get("codigo", "").upper()
-    jugador_id = data.get("id_jugador")
+    jugador_id = str(data.get("id_jugador", ""))
     accion = data.get("accion") # "LISTO" o "ESPERAR"
     
-    if codigo in estado_partida and jugador_id is not None:
-        estado_partida[codigo]["listos"][str(jugador_id)] = (accion == "LISTO")
+    if codigo in estado_partida and jugador_id:
+        estado_partida[codigo]["listos"][jugador_id] = (accion == "LISTO")
         return jsonify({"exito": True})
     return jsonify({"exito": False, "error": "Error al actualizar respuesta"})
 
@@ -148,17 +148,17 @@ def verificar_partida(codigo):
 def actualizar_posicion():
     data = request.json or {}
     codigo = data.get("codigo", "").upper()
-    jugador_id = data.get("id_jugador")
+    jugador_id = str(data.get("id_jugador", ""))
     
-    if codigo in salas and jugador_id is not None:
+    if codigo in salas and jugador_id:
         if codigo not in posiciones_jugadores:
             posiciones_jugadores[codigo] = {}
         
-        posiciones_jugadores[codigo][str(jugador_id)] = {
+        posiciones_jugadores[codigo][jugador_id] = {
             "x": data.get("x", 2000),
             "y": data.get("y", 2000),
             "mirando_izquierda": data.get("mirando_izquierda", False),
-            "nombre": data.get("nombre", str(jugador_id))
+            "nombre": data.get("nombre", jugador_id)
         }
         return jsonify({
             "exito": True, 
