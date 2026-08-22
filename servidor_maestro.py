@@ -124,7 +124,6 @@ def iniciar_partida():
     data = request.json or {}
     codigo = data.get("codigo", "").upper()
     if codigo in estado_partida:
-        # Verifica opcionalmente si todos están listos
         listos_dict = estado_partida[codigo]["listos"]
         if listos_dict and all(listos_dict.values()):
             estado_partida[codigo]["iniciada"] = True
