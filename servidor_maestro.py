@@ -7,8 +7,7 @@ app = Flask(__name__)
 # Estructuras de datos en memoria para el servidor
 salas = {} # { "CODIGO": [ {"id": "...", "nombre": "..."}, ... ] }
 posiciones_jugadores = {} # { "CODIGO": { "id_jugador": {"x": 0, "y": 0, ...} } }
-estado_partida = {} # { "CODIGO": {"iniciada": False, "estado": "LOBBY"} }
-listos_jugadores = {} # { "CODIGO": { "id_jugador": bool } }
+estado_partida = {} # { "CODIGO": {"iniciada": False, "estado": "LOBBY", "listos": {}} }
 
 @app.route('/')
 def home():
@@ -38,11 +37,11 @@ def crear_sala():
     if codigo not in posiciones_jugadores:
         posiciones_jugadores[codigo] = {}
         
-    estado_partida[codigo] = {"iniciada": False, "estado": "LOBBY"}
-    
-    if codigo not in listos_jugadores:
-        listos_jugadores[codigo] = {}
-    listos_jugadores[codigo][str(id_jugador)] = False
+    estado_partida[codigo] = {
+        "iniciada": False, 
+        "estado": "LOBBY",
+        "listos": {str(id_jugador): False}
+    }
     
     return jsonify({
         "exito": True, 
@@ -69,10 +68,9 @@ def unirse_sala():
             "id": jugador_id,
             "nombre": nombre_jugador
         })
-        
-    if codigo not in listos_jugadores:
-        listos_jugadores[codigo] = {}
-    listos_jugadores[codigo][str(jugador_id)] = False
+    
+    if codigo in estado_partida:
+        estado_partida[codigo]["listos"][str(jugador_id)] = False
         
     return jsonify({
         "exito": True, 
@@ -83,15 +81,14 @@ def unirse_sala():
 @app.route('/estado_sala', methods=['GET'])
 def estado_sala():
     codigo = request.args.get("codigo", "").upper()
-    if codigo in salas:
+    if codigo in salas and codigo in estado_partida:
         total_jugadores = len(salas[codigo])
-        estado_actual = estado_partida.get(codigo, {}).get("estado", "LOBBY")
-        listos_map = listos_jugadores.get(codigo, {})
+        info_estado = estado_partida[codigo]
         return jsonify({
             "exito": True,
             "total": total_jugadores,
-            "estado": estado_actual,
-            "listos": listos_map,
+            "estado": info_estado.get("estado", "LOBBY"),
+            "listos": info_estado.get("listos", {}),
             "sala": {"jugadores": salas[codigo]}
         })
     return jsonify({"exito": False, "error": "Sala no encontrada"}), 404
@@ -105,7 +102,7 @@ def estado_sala():
 def solicitar_inicio():
     data = request.json or {}
     codigo = data.get("codigo", "").upper()
-    if codigo in salas:
+    if codigo in estado_partida:
         estado_partida[codigo]["estado"] = "ESPERANDO_CONFIRMACION"
         return jsonify({"exito": True})
     return jsonify({"exito": False, "error": "Sala no encontrada"})
@@ -114,25 +111,26 @@ def solicitar_inicio():
 def enviar_respuesta():
     data = request.json or {}
     codigo = data.get("codigo", "").upper()
-    id_jugador = data.get("id_jugador")
+    jugador_id = data.get("id_jugador")
     accion = data.get("accion") # "LISTO" o "ESPERAR"
     
-    if codigo in salas and id_jugador is not None:
-        if codigo not in listos_jugadores:
-            listos_jugadores[codigo] = {}
-        listos_jugadores[codigo][str(id_jugador)] = (accion == "LISTO")
+    if codigo in estado_partida and jugador_id is not None:
+        estado_partida[codigo]["listos"][str(jugador_id)] = (accion == "LISTO")
         return jsonify({"exito": True})
-    return jsonify({"exito": False, "error": "Datos inválidos"})
+    return jsonify({"exito": False, "error": "Error al actualizar respuesta"})
 
 @app.route('/iniciar_partida', methods=['POST'])
 def iniciar_partida():
     data = request.json or {}
     codigo = data.get("codigo", "").upper()
-    if codigo in salas:
-        listos = listos_jugadores.get(codigo, {})
-        # Opcional: verificar que todos estén listos, o forzar si el host lo decide
-        estado_partida[codigo] = {"iniciada": True, "estado": "INICIADA"}
-        return jsonify({"exito": True})
+    if codigo in estado_partida:
+        # Verifica opcionalmente si todos están listos
+        listos_dict = estado_partida[codigo]["listos"]
+        if listos_dict and all(listos_dict.values()):
+            estado_partida[codigo]["iniciada"] = True
+            estado_partida[codigo]["estado"] = "INICIADA"
+            return jsonify({"exito": True})
+        return jsonify({"exito": False, "error": "No todos los jugadores están listos"})
     return jsonify({"exito": False, "error": "Sala no encontrada"})
 
 @app.route('/verificar_partida/<codigo>', methods=['GET'])
