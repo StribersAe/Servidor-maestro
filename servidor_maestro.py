@@ -7,7 +7,8 @@ app = Flask(__name__)
 # Estructuras de datos en memoria para el servidor
 salas = {} # { "CODIGO": [ {"id": "...", "nombre": "..."}, ... ] }
 posiciones_jugadores = {} # { "CODIGO": { "id_jugador": {"x": 0, "y": 0, ...} } }
-estado_partida = {} # { "CODIGO": {"iniciada": False} }
+estado_partida = {} # { "CODIGO": {"iniciada": False, "estado": "LOBBY"} }
+listos_jugadores = {} # { "CODIGO": { "id_jugador": bool } }
 
 @app.route('/')
 def home():
@@ -23,13 +24,11 @@ def crear_sala():
     nombre_creador = data.get("jugador") or data.get("nombre", "Anónimo")
     id_jugador = data.get("id_jugador", nombre_creador)
     
-    # Generamos un código aleatorio de 4 dígitos si el cliente no lo manda
     codigo = str(data.get("codigo", random.randint(1000, 9999))).upper()
     
     if codigo not in salas:
         salas[codigo] = []
     
-    # Verificamos si el host ya está en la sala
     if not any(str(j.get("id")) == str(id_jugador) for j in salas[codigo]):
         salas[codigo].append({
             "id": id_jugador,
@@ -39,7 +38,11 @@ def crear_sala():
     if codigo not in posiciones_jugadores:
         posiciones_jugadores[codigo] = {}
         
-    estado_partida[codigo] = {"iniciada": False}
+    estado_partida[codigo] = {"iniciada": False, "estado": "LOBBY"}
+    
+    if codigo not in listos_jugadores:
+        listos_jugadores[codigo] = {}
+    listos_jugadores[codigo][str(id_jugador)] = False
     
     return jsonify({
         "exito": True, 
@@ -67,6 +70,10 @@ def unirse_sala():
             "nombre": nombre_jugador
         })
         
+    if codigo not in listos_jugadores:
+        listos_jugadores[codigo] = {}
+    listos_jugadores[codigo][str(jugador_id)] = False
+        
     return jsonify({
         "exito": True, 
         "total": len(jugadores_actuales),
@@ -78,9 +85,13 @@ def estado_sala():
     codigo = request.args.get("codigo", "").upper()
     if codigo in salas:
         total_jugadores = len(salas[codigo])
+        estado_actual = estado_partida.get(codigo, {}).get("estado", "LOBBY")
+        listos_map = listos_jugadores.get(codigo, {})
         return jsonify({
             "exito": True,
             "total": total_jugadores,
+            "estado": estado_actual,
+            "listos": listos_map,
             "sala": {"jugadores": salas[codigo]}
         })
     return jsonify({"exito": False, "error": "Sala no encontrada"}), 404
@@ -90,12 +101,37 @@ def estado_sala():
 # RUTAS DE CONTROL DE PARTIDA (INICIO / MAPA)
 # ==========================================
 
+@app.route('/solicitar_inicio', methods=['POST'])
+def solicitar_inicio():
+    data = request.json or {}
+    codigo = data.get("codigo", "").upper()
+    if codigo in salas:
+        estado_partida[codigo]["estado"] = "ESPERANDO_CONFIRMACION"
+        return jsonify({"exito": True})
+    return jsonify({"exito": False, "error": "Sala no encontrada"})
+
+@app.route('/enviar_respuesta', methods=['POST'])
+def enviar_respuesta():
+    data = request.json or {}
+    codigo = data.get("codigo", "").upper()
+    id_jugador = data.get("id_jugador")
+    accion = data.get("accion") # "LISTO" o "ESPERAR"
+    
+    if codigo in salas and id_jugador is not None:
+        if codigo not in listos_jugadores:
+            listos_jugadores[codigo] = {}
+        listos_jugadores[codigo][str(id_jugador)] = (accion == "LISTO")
+        return jsonify({"exito": True})
+    return jsonify({"exito": False, "error": "Datos inválidos"})
+
 @app.route('/iniciar_partida', methods=['POST'])
 def iniciar_partida():
     data = request.json or {}
     codigo = data.get("codigo", "").upper()
     if codigo in salas:
-        estado_partida[codigo] = {"iniciada": True}
+        listos = listos_jugadores.get(codigo, {})
+        # Opcional: verificar que todos estén listos, o forzar si el host lo decide
+        estado_partida[codigo] = {"iniciada": True, "estado": "INICIADA"}
         return jsonify({"exito": True})
     return jsonify({"exito": False, "error": "Sala no encontrada"})
 
@@ -104,7 +140,7 @@ def verificar_partida(codigo):
     codigo = codigo.upper()
     if codigo in estado_partida:
         return jsonify(estado_partida[codigo])
-    return jsonify({"iniciada": False})
+    return jsonify({"iniciada": False, "estado": "LOBBY"})
 
 
 # ==========================================
