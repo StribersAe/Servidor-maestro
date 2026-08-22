@@ -35,7 +35,8 @@ def crear_sala():
             "nombre": nombre_creador
         })
         
-    posiciones_jugadores[codigo] = {}
+    if codigo not in posiciones_jugadores:
+        posiciones_jugadores[codigo] = {}
     
     return jsonify({
         "exito": True, 
