@@ -7,6 +7,7 @@ app = Flask(__name__)
 # Estructuras de datos en memoria para el servidor
 salas = {} # { "CODIGO": [ {"id": "...", "nombre": "..."}, ... ] }
 posiciones_jugadores = {} # { "CODIGO": { "id_jugador": {"x": 0, "y": 0, ...} } }
+estado_partida = {} # { "CODIGO": {"iniciada": False} }
 
 @app.route('/')
 def home():
@@ -37,6 +38,8 @@ def crear_sala():
         
     if codigo not in posiciones_jugadores:
         posiciones_jugadores[codigo] = {}
+        
+    estado_partida[codigo] = {"iniciada": False}
     
     return jsonify({
         "exito": True, 
@@ -84,6 +87,27 @@ def estado_sala():
 
 
 # ==========================================
+# RUTAS DE CONTROL DE PARTIDA (INICIO / MAPA)
+# ==========================================
+
+@app.route('/iniciar_partida', methods=['POST'])
+def iniciar_partida():
+    data = request.json or {}
+    codigo = data.get("codigo", "").upper()
+    if codigo in salas:
+        estado_partida[codigo] = {"iniciada": True}
+        return jsonify({"exito": True})
+    return jsonify({"exito": False, "error": "Sala no encontrada"})
+
+@app.route('/verificar_partida/<codigo>', methods=['GET'])
+def verificar_partida(codigo):
+    codigo = codigo.upper()
+    if codigo in estado_partida:
+        return jsonify(estado_partida[codigo])
+    return jsonify({"iniciada": False})
+
+
+# ==========================================
 # RUTAS DE MULTIJUGADOR EN TIEMPO REAL (MAPA)
 # ==========================================
 
@@ -97,7 +121,6 @@ def actualizar_posicion():
         if codigo not in posiciones_jugadores:
             posiciones_jugadores[codigo] = {}
         
-        # Guardamos las coordenadas y estado en tiempo real
         posiciones_jugadores[codigo][str(jugador_id)] = {
             "x": data.get("x", 2000),
             "y": data.get("y", 2000),
