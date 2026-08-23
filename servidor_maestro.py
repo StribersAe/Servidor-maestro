@@ -1,4 +1,6 @@
 import os
+import time
+import uuid
 from flask import Flask, request, jsonify
 import random
 
@@ -8,6 +10,9 @@ app = Flask(__name__)
 salas = {} # { "CODIGO": [ {"id": "...", "nombre": "..."}, ... ] }
 posiciones_jugadores = {} # { "CODIGO": { "id_jugador": {"x": 0, "y": 0, ...} } }
 estado_partida = {} # { "CODIGO": {"iniciada": False, "estado": "LOBBY", "listos": {}} }
+
+# NUEVO: Guardamos las balas recientes disparadas en cada sala
+balas_sala = {} 
 
 @app.route('/')
 def home():
@@ -42,6 +47,9 @@ def crear_sala():
         "estado": "LOBBY",
         "listos": {id_jugador: False}
     }
+    
+    # Inicializamos la lista de balas de esta sala
+    balas_sala[codigo] = []
     
     return jsonify({
         "exito": True, 
@@ -114,7 +122,7 @@ def enviar_respuesta():
     data = request.json or {}
     codigo = data.get("codigo", "").upper()
     jugador_id = str(data.get("id_jugador", ""))
-    accion = data.get("accion") # "LISTO" o "ESPERAR"
+    accion = data.get("accion") 
     
     if codigo in estado_partida and jugador_id:
         if "listos" not in estado_partida[codigo]:
@@ -157,19 +165,50 @@ def actualizar_posicion():
     if codigo in salas and jugador_id:
         if codigo not in posiciones_jugadores:
             posiciones_jugadores[codigo] = {}
+        if codigo not in balas_sala:
+            balas_sala[codigo] = []
+            
+        # Limpiar balas viejas (más de 2 segundos) para no sobrecargar
+        tiempo_actual = time.time()
+        balas_sala[codigo] = [b for b in balas_sala[codigo] if tiempo_actual - b["timestamp"] < 2.0]
         
         posiciones_jugadores[codigo][jugador_id] = {
             "x": data.get("x", 2000),
             "y": data.get("y", 2000),
             "mirando_izquierda": data.get("mirando_izquierda", False),
-            "nombre": data.get("nombre", jugador_id)
+            "nombre": data.get("nombre", jugador_id),
+            "outfit": data.get("outfit", {}) # <-- AHORA GUARDAMOS LA ROPA
         }
+        
         return jsonify({
             "exito": True, 
-            "jugadores": posiciones_jugadores[codigo]
+            "jugadores": posiciones_jugadores[codigo],
+            "balas": balas_sala[codigo] # <-- ENVIAMOS LAS BALAS A TODOS
         })
     
     return jsonify({"exito": False})
+
+@app.route('/disparar', methods=['POST'])
+def disparar():
+    data = request.json or {}
+    codigo = data.get("codigo", "").upper()
+    
+    if codigo not in balas_sala:
+        balas_sala[codigo] = []
+        
+    nueva_bala = {
+        "id_bala": str(uuid.uuid4()),
+        "id_tirador": data.get("id_tirador"),
+        "origen_x": data.get("origen_x"),
+        "origen_y": data.get("origen_y"),
+        "destino_x": data.get("destino_x"),
+        "destino_y": data.get("destino_y"),
+        "daño": data.get("daño"),
+        "timestamp": time.time()
+    }
+    balas_sala[codigo].append(nueva_bala)
+    
+    return jsonify({"exito": True})
 
 @app.route('/obtener_posiciones/<codigo>', methods=['GET'])
 def obtener_posiciones(codigo):
