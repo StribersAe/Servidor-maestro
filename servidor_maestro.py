@@ -1,6 +1,4 @@
 import os
-import time
-import uuid
 from flask import Flask, request, jsonify
 import random
 
@@ -10,9 +8,7 @@ app = Flask(__name__)
 salas = {} # { "CODIGO": [ {"id": "...", "nombre": "..."}, ... ] }
 posiciones_jugadores = {} # { "CODIGO": { "id_jugador": {"x": 0, "y": 0, ...} } }
 estado_partida = {} # { "CODIGO": {"iniciada": False, "estado": "LOBBY", "listos": {}} }
-
-# NUEVO: Guardamos las balas recientes disparadas en cada sala
-balas_sala = {} 
+salas_balas = {} # NUEVO: Guardaremos el historial de balas activas por sala
 
 @app.route('/')
 def home():
@@ -48,8 +44,7 @@ def crear_sala():
         "listos": {id_jugador: False}
     }
     
-    # Inicializamos la lista de balas de esta sala
-    balas_sala[codigo] = []
+    salas_balas[codigo] = [] # Limpiamos historial de balas para la nueva sala
     
     return jsonify({
         "exito": True, 
@@ -165,61 +160,34 @@ def actualizar_posicion():
     if codigo in salas and jugador_id:
         if codigo not in posiciones_jugadores:
             posiciones_jugadores[codigo] = {}
-        if codigo not in balas_sala:
-            balas_sala[codigo] = []
-            
-        # Limpiar balas viejas (más de 2 segundos) para no sobrecargar
-        tiempo_actual = time.time()
-        balas_sala[codigo] = [b for b in balas_sala[codigo] if tiempo_actual - b["timestamp"] < 2.0]
         
+        # Guardamos la nueva posición y la vestimenta/arma del jugador
         posiciones_jugadores[codigo][jugador_id] = {
             "x": data.get("x", 2000),
             "y": data.get("y", 2000),
             "mirando_izquierda": data.get("mirando_izquierda", False),
             "nombre": data.get("nombre", jugador_id),
-            "outfit": data.get("outfit", {}) # <-- AHORA GUARDAMOS LA ROPA
+            "outfit": data.get("outfit", {}), # Recibimos la ropa
+            "arma": data.get("arma", "pistola") # Recibimos el arma
         }
         
+        # Procesamos balas nuevas
+        nuevas_balas = data.get("balas", [])
+        if codigo not in salas_balas:
+            salas_balas[codigo] = []
+        
+        if nuevas_balas:
+            salas_balas[codigo].extend(nuevas_balas)
+            # Conservamos solo las últimas 60 balas para evitar lag/sobrecarga
+            salas_balas[codigo] = salas_balas[codigo][-60:]
+
         return jsonify({
             "exito": True, 
             "jugadores": posiciones_jugadores[codigo],
-            "balas": balas_sala[codigo] # <-- ENVIAMOS LAS BALAS A TODOS
+            "balas": salas_balas[codigo] # Enviamos el historial de balas a todos
         })
     
     return jsonify({"exito": False})
-
-@app.route('/disparar', methods=['POST'])
-def disparar():
-    data = request.json or {}
-    codigo = data.get("codigo", "").upper()
-    
-    if codigo not in balas_sala:
-        balas_sala[codigo] = []
-        
-    nueva_bala = {
-        "id_bala": str(uuid.uuid4()),
-        "id_tirador": data.get("id_tirador"),
-        "origen_x": data.get("origen_x"),
-        "origen_y": data.get("origen_y"),
-        "destino_x": data.get("destino_x"),
-        "destino_y": data.get("destino_y"),
-        "daño": data.get("daño"),
-        "timestamp": time.time()
-    }
-    balas_sala[codigo].append(nueva_bala)
-    
-    return jsonify({"exito": True})
-
-@app.route('/obtener_posiciones/<codigo>', methods=['GET'])
-def obtener_posiciones(codigo):
-    codigo = codigo.upper()
-    if codigo in posiciones_jugadores:
-        return jsonify({
-            "exito": True, 
-            "jugadores": posiciones_jugadores[codigo]
-        })
-    return jsonify({"exito": True, "jugadores": {}})
-
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
